@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
-  name: clean-services
+  name: cleanup-services
   namespace: default
 spec:
   schedule: 0 0 * * * # Runs daily at midnight
   workflowSpec:
-    entrypoint: clean-services
+    entrypoint: cleanup-services
     templates:
-      - name: clean-services
+      - name: cleanup-services
         outputs:
           parameters:
-            - name: clean-services
+            - name: cleanup-services
               valueFrom:
                 path: /tmp/result.txt
         script:
