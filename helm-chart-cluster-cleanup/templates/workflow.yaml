@@ -8,25 +8,36 @@ spec:
   templates:
   - name: cleanup-tasks
     steps:
+    steps:
       - - name: cleanup-deployments
+          when: "{{ .Values.cleanup.deployments }}"
           template: cleanup-deployments
       - - name: cleanup-imagepullbackoff-pods
+          when: "{{ .Values.cleanup.imagepullbackoffPods }}"
           template: cleanup-imagepullbackoff-pods
       - - name: cleanup-services
+          when: "{{ .Values.cleanup.services }}"
           template: cleanup-services
       - - name: cleanup-complete-pods
+          when: "{{ .Values.cleanup.completePods }}"
           template: cleanup-complete-pods
       - - name: cleanup-crashloopbackoff-pods
+          when: "{{ .Values.cleanup.crashloopbackoffPods }}"
           template: cleanup-crashloopbackoff-pods
       - - name: cleanup-available-pvs
+          when: "{{ .Values.cleanup.availablePvs }}"
           template: cleanup-available-pvs
       - - name: cleanup-empty-namespaces
+          when: "{{ .Values.cleanup.emptyNamespaces }}"
           template: cleanup-empty-namespaces
       - - name: cleanup-unbound-pvcs
+          when: "{{ .Values.cleanup.unboundPvcs }}"
           template: cleanup-unbound-pvcs
       - - name: cleanup-empty-ingresses
+          when: "{{ .Values.cleanup.emptyIngresses }}"
           template: cleanup-empty-ingresses
       - - name: print-report
+          when: "{{ .Values.cleanup.printReport }}"
           template: print-report
           arguments:
             parameters:
