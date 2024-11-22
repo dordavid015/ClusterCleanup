@@ -24,8 +24,8 @@ spec:
           template: cleanup-empty-namespaces
       - - name: cleanup-unbound-pvcs
           template: cleanup-unbound-pvcs
-      - - name: cleanup-empty-ingress
-          template: cleanup-empty-ingress
+      - - name: cleanup-empty-ingresses
+          template: cleanup-empty-ingresses
       - - name: print-report
           template: print-report
           arguments:
@@ -46,8 +46,8 @@ spec:
               value: "{{ `{{ steps.cleanup-empty-namespaces.outputs.parameters.cleanup-empty-namespaces }}` }}"
             - name: cleanup-unbound-pvcs
               value: "{{ `{{ steps.cleanup-unbound-pvcs.outputs.parameters.cleanup-unbound-pvcs }}` }}"
-            - name: cleanup-empty-ingress
-              value: "{{ `{{ steps.cleanup-empty-ingress.outputs.parameters.cleanup-empty-ingress }}` }}"
+            - name: cleanup-empty-ingresses
+              value: "{{ `{{ steps.cleanup-empty-ingresses.outputs.parameters.cleanup-empty-ingresses }}` }}"
 
   - name: cleanup-deployments
     outputs:
@@ -244,10 +244,10 @@ spec:
         echo "Deleted $count unbound PVCs. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
-  - name: cleanup-empty-ingress 
+  - name: cleanup-empty-ingresses 
     outputs:
         parameters:
-        - name: cleanup-empty-ingress 
+        - name: cleanup-empty-ingresses 
           valueFrom:
             path: /tmp/result.txt
     script:
@@ -311,7 +311,7 @@ spec:
       - name: cleanup-available-pvs
       - name: cleanup-empty-namespaces
       - name: cleanup-unbound-pvcs
-      - name: cleanup-empty-ingress
+      - name: cleanup-empty-ingresses
     script:
       image: busybox
       command: [sh, -c]
@@ -324,4 +324,4 @@ spec:
         echo "Cleanup Available PVs: {{ `{{ inputs.parameters.cleanup-available-pvs }}` }}"
         echo "Cleanup Empty Namespaces: {{ `{{ inputs.parameters.cleanup-empty-namespaces }}` }}"
         echo "Cleanup Unbound PVCs: {{ `{{ inputs.parameters.cleanup-unbound-pvcs }}` }}"
-        echo "Cleanup Empty Ingress Resources: {{ `{{ inputs.parameters.cleanup-empty-ingress }}` }}"
+        echo "Cleanup Empty Ingress Resources: {{ `{{ inputs.parameters.cleanup-empty-ingresses }}` }}"
