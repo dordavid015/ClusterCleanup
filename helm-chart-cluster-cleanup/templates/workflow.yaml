@@ -1,0 +1,327 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: cluster-cleanup-tasks
+  namespace: default
+spec:
+  entrypoint: cleanup-tasks
+  templates:
+  - name: cleanup-tasks
+    steps:
+      - - name: cleanup-deployments
+          template: cleanup-deployments
+      - - name: cleanup-imagepullbackoff-pods
+          template: cleanup-imagepullbackoff-pods
+      - - name: clean-services
+          template: clean-services
+      - - name: cleanup-complete-pods
+          template: cleanup-complete-pods
+      - - name: cleanup-crashloopbackoff-pods
+          template: cleanup-crashloopbackoff-pods
+      - - name: cleanup-available-pvs
+          template: cleanup-available-pvs
+      - - name: cleanup-empty-namespaces
+          template: cleanup-empty-namespaces
+      - - name: cleanup-unbound-pvcs
+          template: cleanup-unbound-pvcs
+      - - name: cleanup-empty-ingress
+          template: cleanup-empty-ingress
+      - - name: print-report
+          template: print-report
+          arguments:
+            parameters:
+            - name: cleanup-deployments
+              value: "{{ `{{ steps.cleanup-deployments.outputs.parameters.cleanup-deployments }}` }}"
+            - name: cleanup-imagepullbackoff-pods
+              value: "{{ `{{ steps.cleanup-imagepullbackoff-pods.outputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
+            - name: clean-services
+              value: "{{ `{{ steps.clean-services.outputs.parameters.clean-services }}` }}"
+            - name: cleanup-complete-pods
+              value: "{{ `{{ steps.cleanup-complete-pods.outputs.parameters.cleanup-complete-pods }}` }}"
+            - name: cleanup-crashloopbackoff-pods
+              value: "{{ `{{ steps.cleanup-crashloopbackoff-pods.outputs.parameters.cleanup-crashloopbackoff-pods }}` }}"
+            - name: cleanup-available-pvs
+              value: "{{ `{{ steps.cleanup-available-pvs.outputs.parameters.cleanup-available-pvs}}` }}"
+            - name: cleanup-empty-namespaces
+              value: "{{ `{{ steps.cleanup-empty-namespaces.outputs.parameters.cleanup-empty-namespaces }}` }}"
+            - name: cleanup-unbound-pvcs
+              value: "{{ `{{ steps.cleanup-unbound-pvcs.outputs.parameters.cleanup-unbound-pvcs }}` }}"
+            - name: cleanup-empty-ingress
+              value: "{{ `{{ steps.cleanup-empty-ingress.outputs.parameters.cleanup-empty-ingress }}` }}"
+
+  - name: cleanup-deployments
+    outputs:
+        parameters:
+        - name: cleanup-deployments  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up Deployments scaled to 0..."
+        count=0
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for deployment in $(kubectl get deployments -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
+            kubectl delete deployment $deployment -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            count=$((count + 1))
+          done
+        done
+        echo "Deleted $count Deployments with 0 replicas. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-imagepullbackoff-pods
+    outputs:
+        parameters:
+        - name: cleanup-imagepullbackoff-pods  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up ImagePullBackOff pods..."
+        count=0
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Pending -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="ImagePullBackOff")].metadata.name}'); do
+            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            count=$((count + 1))
+          done
+        done
+        echo "Deleted $count pods in ImagePullBackOff state. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: clean-services
+    outputs:
+        parameters:
+        - name: clean-services  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Scanning for Services without Endpoints..."
+        count=0
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for service in $(kubectl get svc -n $namespace -o jsonpath='{.items[*].metadata.name}'); do
+            endpoints=$(kubectl get endpoints $service -n $namespace -o jsonpath='{.subsets}' 2>/dev/null)
+            if [ -z "$endpoints" ]; then
+              kubectl delete svc $service -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+              count=$((count + 1))
+            fi
+          done
+        done
+        echo "Deleted $count Services without Endpoints. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-complete-pods
+    outputs:
+        parameters:
+        - name: cleanup-complete-pods  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up completed Pods..."
+        count=0
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Succeeded -o jsonpath='{.items[*].metadata.name}'); do
+            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            count=$((count + 1))
+          done
+        done
+        echo "Deleted $count completed Pods. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-crashloopbackoff-pods
+    outputs:
+        parameters:
+        - name: cleanup-crashloopbackoff-pods  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up CrashLoopBackOff pods..."
+        count=0
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Running -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="CrashLoopBackOff")].metadata.name}'); do
+            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            count=$((count + 1))
+          done
+        done
+        echo "Deleted $count CrashLoopBackOff pods. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-available-pvs
+    outputs:
+        parameters:
+        - name: cleanup-available-pvs  
+          valueFrom:
+            path: /tmp/result.txt    
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up available Persistent Volumes (PVs)..."
+        count=0
+        for pv in $(kubectl get pv --no-headers | awk '$5 == "Available" {print $1}'); do
+          kubectl delete pv $pv {{ if .Values.dryRun }}--dry-run=client{{ end }}
+          count=$((count + 1))
+        done
+        echo "Deleted $count available Persistent Volumes. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-empty-namespaces
+    outputs:
+        parameters:
+        - name: cleanup-empty-namespaces  
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up empty namespaces..."
+        count=0
+        for namespace in $(kubectl get namespaces --no-headers | awk '{print $1}'); do
+          deploy_count=$(kubectl get deployments -n $namespace --no-headers 2>/dev/null | wc -l)
+          pod_count=$(kubectl get pods -n $namespace --no-headers 2>/dev/null | wc -l)
+          svc_count=$(kubectl get svc -n $namespace --no-headers 2>/dev/null | wc -l)
+          if [ "$deploy_count" -eq 0 ] && [ "$pod_count" -eq 0 ] && [ "$svc_count" -eq 0 ]; then
+            kubectl delete namespace $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            count=$((count + 1))
+          fi
+        done
+        echo "Deleted $count empty namespaces. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-unbound-pvcs 
+    outputs:
+        parameters:
+        - name: cleanup-unbound-pvcs 
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Cleaning up unbound PVCs..."
+        count=0
+        for pvc in $(kubectl get pvc --no-headers | awk '$2 == "Pending" {print $1}'); do
+          kubectl delete pvc $pvc {{ if .Values.dryRun }}--dry-run=client{{ end }}
+          count=$((count + 1))
+        done
+        echo "Deleted $count unbound PVCs. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+
+  - name: cleanup-empty-ingress 
+    outputs:
+        parameters:
+        - name: cleanup-empty-ingress 
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        echo "Starting cleanup of Ingresses referencing non-existent Services in each namespace..."
+        count=0
+        # Get all namespaces
+        namespaces=$(kubectl get namespaces --no-headers -o custom-columns=":metadata.name")
+        if [ -z "$namespaces" ]; then
+            echo "No namespaces found."
+            exit 1
+        fi
+
+        for namespace in $namespaces; do
+            echo "Checking Ingresses in Namespace: $namespace"
+
+            # Get all Ingress names in the current namespace
+            ingresses=$(kubectl get ingress -n "$namespace" --no-headers -o custom-columns=":metadata.name")
+            if [ -z "$ingresses" ]; then
+                echo "No Ingresses found in Namespace: $namespace."
+            else
+                for ingress in $ingresses; do
+                    echo "  Checking Ingress: $ingress"
+
+                    # Get the Services referenced by this Ingress
+                    services=$(kubectl get ingress "$ingress" -n "$namespace" -o custom-columns=":spec.rules[*].http.paths[*].backend.service.name")
+
+                    if [ -n "$services" ]; then
+                        for service in $services; do
+                            echo "    Validating Service: $service"
+ 
+                            # Check if service exists
+                            service_check=$(kubectl get service "$service" -n "$namespace" --ignore-not-found)
+                            if [ -z "$service_check" ]; then
+                                echo "    Service $service does not exist. Deleting Ingress: $ingress"
+                                kubectl delete ingress "$ingress" -n "$namespace" {{ if .Values.dryRun }}--dry-run=client{{ end }}
+                                count=$((count + 1))
+                                break  # Stop checking other services for this Ingress
+                            fi
+                        done
+                    else
+                        echo "Ingress $ingress in Namespace $namespace does not reference any Services."
+                    fi
+                done
+            fi
+        done
+        echo "Deleted $count empty ingress resources. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+
+  - name: print-report
+    inputs:
+      parameters:
+      - name: cleanup-deployments
+      - name: cleanup-imagepullbackoff-pods
+      - name: clean-services
+      - name: cleanup-complete-pods
+      - name: cleanup-crashloopbackoff-pods
+      - name: cleanup-available-pvs
+      - name: cleanup-empty-namespaces
+      - name: cleanup-unbound-pvcs
+      - name: cleanup-empty-ingress
+    script:
+      image: busybox
+      command: [sh, -c]
+      source: |
+        echo "Cleanup Deployments: {{ `{{ inputs.parameters.cleanup-deployments }}` }}"
+        echo "Cleanup ImagePullBackOff Pods: {{ `{{ inputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
+        echo "Cleanup Services: {{ `{{ inputs.parameters.clean-services }}` }}"
+        echo "Cleanup Complete Pods: {{ `{{ inputs.parameters.cleanup-complete-pods }}` }}"
+        echo "Cleanup CrashLoopBackOff Pods: {{ `{{ inputs.parameters.cleanup-crashloopbackoff-pods }}` }}"
+        echo "Cleanup Available PVs: {{ `{{ inputs.parameters.cleanup-available-pvs }}` }}"
+        echo "Cleanup Empty Namespaces: {{ `{{ inputs.parameters.cleanup-empty-namespaces }}` }}"
+        echo "Cleanup Unbound PVCs: {{ `{{ inputs.parameters.cleanup-unbound-pvcs }}` }}"
+        echo "Cleanup Empty Ingress Resources: {{ `{{ inputs.parameters.cleanup-empty-ingress }}` }}"
