@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-deployments
+  namespace: default
+spec:
+  schedule: 0 0 * * * # Runs daily at midnight
+  workflowSpec:
+    entrypoint: cleanup-deployments
+    templates:
+      - name: cleanup-deployments
+        outputs:
+          parameters:
+            - name: cleanup-deployments
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command: ["sh"]
+          source: |
+            #!/bin/sh
+            cd /tmp
+            touch result.txt
+            echo "Cleaning up Deployments scaled to 0..."
+            count=0
+            for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+              for deployment in $(kubectl get deployments -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
+                kubectl delete deployment $deployment -n $namespace --dry-run=client
+                count=$((count + 1))
+              done
+            done
+            echo "Deleted $count Deployments with 0 replicas." > /tmp/result.txt
