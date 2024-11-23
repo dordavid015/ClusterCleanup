@@ -8,25 +8,36 @@ spec:
   templates:
   - name: cleanup-tasks
     steps:
+    steps:
       - - name: cleanup-deployments
+          when: "{{ .Values.cleanup.deployments }}"
           template: cleanup-deployments
       - - name: cleanup-imagepullbackoff-pods
+          when: "{{ .Values.cleanup.imagepullbackoffPods }}"
           template: cleanup-imagepullbackoff-pods
-      - - name: clean-services
-          template: clean-services
+      - - name: cleanup-services
+          when: "{{ .Values.cleanup.services }}"
+          template: cleanup-services
       - - name: cleanup-complete-pods
+          when: "{{ .Values.cleanup.completePods }}"
           template: cleanup-complete-pods
       - - name: cleanup-crashloopbackoff-pods
+          when: "{{ .Values.cleanup.crashloopbackoffPods }}"
           template: cleanup-crashloopbackoff-pods
       - - name: cleanup-available-pvs
+          when: "{{ .Values.cleanup.availablePvs }}"
           template: cleanup-available-pvs
       - - name: cleanup-empty-namespaces
+          when: "{{ .Values.cleanup.emptyNamespaces }}"
           template: cleanup-empty-namespaces
       - - name: cleanup-unbound-pvcs
+          when: "{{ .Values.cleanup.unboundPvcs }}"
           template: cleanup-unbound-pvcs
-      - - name: cleanup-empty-ingress
-          template: cleanup-empty-ingress
+      - - name: cleanup-empty-ingresses
+          when: "{{ .Values.cleanup.emptyIngresses }}"
+          template: cleanup-empty-ingresses
       - - name: print-report
+          when: "{{ .Values.cleanup.printReport }}"
           template: print-report
           arguments:
             parameters:
@@ -34,8 +45,8 @@ spec:
               value: "{{ `{{ steps.cleanup-deployments.outputs.parameters.cleanup-deployments }}` }}"
             - name: cleanup-imagepullbackoff-pods
               value: "{{ `{{ steps.cleanup-imagepullbackoff-pods.outputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
-            - name: clean-services
-              value: "{{ `{{ steps.clean-services.outputs.parameters.clean-services }}` }}"
+            - name: cleanup-services
+              value: "{{ `{{ steps.cleanup-services.outputs.parameters.cleanup-services }}` }}"
             - name: cleanup-complete-pods
               value: "{{ `{{ steps.cleanup-complete-pods.outputs.parameters.cleanup-complete-pods }}` }}"
             - name: cleanup-crashloopbackoff-pods
@@ -46,8 +57,8 @@ spec:
               value: "{{ `{{ steps.cleanup-empty-namespaces.outputs.parameters.cleanup-empty-namespaces }}` }}"
             - name: cleanup-unbound-pvcs
               value: "{{ `{{ steps.cleanup-unbound-pvcs.outputs.parameters.cleanup-unbound-pvcs }}` }}"
-            - name: cleanup-empty-ingress
-              value: "{{ `{{ steps.cleanup-empty-ingress.outputs.parameters.cleanup-empty-ingress }}` }}"
+            - name: cleanup-empty-ingresses
+              value: "{{ `{{ steps.cleanup-empty-ingresses.outputs.parameters.cleanup-empty-ingresses }}` }}"
 
   - name: cleanup-deployments
     outputs:
@@ -97,10 +108,10 @@ spec:
         done
         echo "Deleted $count pods in ImagePullBackOff state. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
-  - name: clean-services
+  - name: cleanup-services
     outputs:
         parameters:
-        - name: clean-services  
+        - name: cleanup-services  
           valueFrom:
             path: /tmp/result.txt
     script:
@@ -244,10 +255,10 @@ spec:
         echo "Deleted $count unbound PVCs. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
-  - name: cleanup-empty-ingress 
+  - name: cleanup-empty-ingresses 
     outputs:
         parameters:
-        - name: cleanup-empty-ingress 
+        - name: cleanup-empty-ingresses 
           valueFrom:
             path: /tmp/result.txt
     script:
@@ -305,23 +316,23 @@ spec:
       parameters:
       - name: cleanup-deployments
       - name: cleanup-imagepullbackoff-pods
-      - name: clean-services
+      - name: cleanup-services
       - name: cleanup-complete-pods
       - name: cleanup-crashloopbackoff-pods
       - name: cleanup-available-pvs
       - name: cleanup-empty-namespaces
       - name: cleanup-unbound-pvcs
-      - name: cleanup-empty-ingress
+      - name: cleanup-empty-ingresses
     script:
       image: busybox
       command: [sh, -c]
       source: |
         echo "Cleanup Deployments: {{ `{{ inputs.parameters.cleanup-deployments }}` }}"
         echo "Cleanup ImagePullBackOff Pods: {{ `{{ inputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
-        echo "Cleanup Services: {{ `{{ inputs.parameters.clean-services }}` }}"
+        echo "Cleanup Services: {{ `{{ inputs.parameters.cleanup-services }}` }}"
         echo "Cleanup Complete Pods: {{ `{{ inputs.parameters.cleanup-complete-pods }}` }}"
         echo "Cleanup CrashLoopBackOff Pods: {{ `{{ inputs.parameters.cleanup-crashloopbackoff-pods }}` }}"
         echo "Cleanup Available PVs: {{ `{{ inputs.parameters.cleanup-available-pvs }}` }}"
         echo "Cleanup Empty Namespaces: {{ `{{ inputs.parameters.cleanup-empty-namespaces }}` }}"
         echo "Cleanup Unbound PVCs: {{ `{{ inputs.parameters.cleanup-unbound-pvcs }}` }}"
-        echo "Cleanup Empty Ingress Resources: {{ `{{ inputs.parameters.cleanup-empty-ingress }}` }}"
+        echo "Cleanup Empty Ingress Resources: {{ `{{ inputs.parameters.cleanup-empty-ingresses }}` }}"

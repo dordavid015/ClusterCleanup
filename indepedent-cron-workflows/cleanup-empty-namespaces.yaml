@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-empty-namespaces
+  namespace: default
+spec:
+  schedule: 0 0 * * * # Runs daily at midnight
+  workflowSpec:
+    entrypoint: cleanup-empty-namespaces
+    templates:
+      - name: cleanup-empty-namespaces
+        outputs:
+          parameters:
+            - name: cleanup-empty-namespaces
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command:
+            - sh
+          source: |
+            #!/bin/sh
+            cd /tmp
+            touch result.txt
+            echo "Cleaning up empty namespaces..."
+            count=0
+            for namespace in $(kubectl get namespaces --no-headers | awk '{print $1}'); do
+              deploy_count=$(kubectl get deployments -n $namespace --no-headers 2>/dev/null | wc -l)
+              pod_count=$(kubectl get pods -n $namespace --no-headers 2>/dev/null | wc -l)
+              svc_count=$(kubectl get svc -n $namespace --no-headers 2>/dev/null | wc -l)
+              if [ "$deploy_count" -eq 0 ] && [ "$pod_count" -eq 0 ] && [ "$svc_count" -eq 0 ]; then
+                kubectl delete namespace $namespace
+                count=$((count + 1))
+              fi
+            done
+            echo "Deleted $count empty namespaces." > /tmp/result.txt

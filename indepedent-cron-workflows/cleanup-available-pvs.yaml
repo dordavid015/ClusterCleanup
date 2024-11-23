@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-available-pvs
+  namespace: default
+spec:
+  schedule: 0 0 * * * # Runs daily at midnight
+  workflowSpec:
+    entrypoint: cleanup-available-pvs
+    templates:
+      - name: cleanup-available-pvs
+        outputs:
+          parameters:
+            - name: cleanup-available-pvs
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command:
+            - sh
+          source: |
+            #!/bin/sh
+            cd /tmp
+            touch result.txt
+            echo "Cleaning up available Persistent Volumes (PVs)..."
+            count=0
+            for pv in $(kubectl get pv --no-headers | awk '$5 == "Available" {print $1}'); do
+              kubectl delete pv $pv
+              count=$((count + 1))
+            done
+            echo "Deleted $count available Persistent Volumes." > /tmp/result.txt
