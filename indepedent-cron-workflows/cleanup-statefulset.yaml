@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-statefulsets
+  namespace: default
+spec:
+  schedule: 0 0 * * 0 # Runs midnight every Sunday
+  workflowSpec:
+    entrypoint: cleanup-statefulsets
+    templates:
+      - name: cleanup-statefulsets
+        outputs:
+          parameters:
+            - name: cleanup-statefulsets
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command: ["sh"]
+          source: |
+            #!/bin/sh
+            cd /tmp
+            touch result.txt
+            echo "Cleaning up statefulsets scaled to 0..."
+            count=0
+            for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+              for item in $(kubectl get statefulset -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
+                kubectl delete statefulset $item -n $namespace --dry-run=client
+                count=$((count + 1))
+              done
+            done
+            echo "Deleted $count statefulsets with 0 replicas." > /tmp/result.txt
