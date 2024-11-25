@@ -24,26 +24,25 @@ The Helm chart in this repository simplifies the deployment of all cleanup workf
 #### Workflows Automated by the Helm Chart:
 
 1. **Stale Deployments**: Deletes Deployments with 0 replicas. 
-2. **Unbound PVCs**: Deletes PersistentVolumeClaims (PVCs) stuck in the `Pending` state.
-3. **Empty Namespaces**: Removes namespaces without active resources.
-4. **Services without Endpoints**: Cleans up orphaned or unused services.
-5. **Available PVs**: Deletes unused PersistentVolumes in the `Available` state.
-6. **Outdated Pods**: Identifies and handles completed pods lingering in a "Succeeded" state.
-7. **Pending Pods**: Identifies and handles completed pods lingering in a "ImagePullBackOff" state.
-8. **Ingress Resources**: Removes ingress objects that reference non-existent services.
-9. **Non functioning Deployments/StatefulSets**: Identifies pods stuck in the CrashLoopBackOff state for over a week and scales their owning deployment/StatefulSet to zero.
+2. **Empty Namespaces**: Removes namespaces without active resources. 
+3. **Unbound PVCs**: Deletes PersistentVolumeClaims (PVCs) stuck in the `Pending` state.
+4. **Available PVs**: Deletes unused PersistentVolumes in the `Available` state.
+5. **Outdated Pods**: Identifies and handles Pods in completed state.
+6. **Services without Endpoints**: Cleans up orphaned or unused services.
+7. **Ingress Resources**: Removes ingress objects that reference non-existent services.
+8. **Non functioning Deployments/StatefulSets**: Identifies pods stuck in the CrashLoopBackOff or ImagePullBackOff state for over a week and scales their owning deployment/StatefulSet to zero.
 
 #### Installation
 
 1. Edit `values.yaml` to suit your configurations and schedules.
 2. Deploy the chart using Helm:
-   ```bash
-   helm install cluster-cleanup helm-chart-cluster-cleanup/
-   ```
+   
+   $ helm install cluster-cleanup helm-chart-cluster-cleanup/
+   
 3. Monitor the cron workflows created:
-   ```bash
-   kubectl get cronworkflows -n <namespace>
-   ```
+   
+   $ kubectl get cronworkflows -n <namespace>
+   
 
 ---
 

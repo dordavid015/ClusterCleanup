@@ -12,18 +12,18 @@ spec:
       - - name: cleanup-deployments
           when: "{{ .Values.cleanup.deployments }}"
           template: cleanup-deployments
-      - - name: cleanup-imagepullbackoff-pods
-          when: "{{ .Values.cleanup.imagepullbackoffPods }}"
-          template: cleanup-imagepullbackoff-pods
+      - - name: cleanup-statefulsets
+          when: "{{ .Values.cleanup.statefulsets }}"
+          template: cleanup-statefulsets
+      - - name: cleanup-scale-failed-objects-to-zero
+          when: "{{ .Values.cleanup.cleanupScaleFailedObjectsToZero }}"
+          template: cleanup-scale-failed-objects-to-zero
       - - name: cleanup-services
           when: "{{ .Values.cleanup.services }}"
           template: cleanup-services
       - - name: cleanup-complete-pods
           when: "{{ .Values.cleanup.completePods }}"
           template: cleanup-complete-pods
-      - - name: cleanup-crashloopbackoff-pods
-          when: "{{ .Values.cleanup.crashloopbackoffPods }}"
-          template: cleanup-crashloopbackoff-pods
       - - name: cleanup-available-pvs
           when: "{{ .Values.cleanup.availablePvs }}"
           template: cleanup-available-pvs
@@ -43,14 +43,14 @@ spec:
             parameters:
             - name: cleanup-deployments
               value: "{{ `{{ steps.cleanup-deployments.outputs.parameters.cleanup-deployments }}` }}"
-            - name: cleanup-imagepullbackoff-pods
-              value: "{{ `{{ steps.cleanup-imagepullbackoff-pods.outputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
+            - name: cleanup-statefulsets
+              value: "{{ `{{ steps.cleanup-statefulsets.outputs.parameters.cleanup-statefulsets }}` }}"
             - name: cleanup-services
               value: "{{ `{{ steps.cleanup-services.outputs.parameters.cleanup-services }}` }}"
             - name: cleanup-complete-pods
               value: "{{ `{{ steps.cleanup-complete-pods.outputs.parameters.cleanup-complete-pods }}` }}"
-            - name: cleanup-crashloopbackoff-pods
-              value: "{{ `{{ steps.cleanup-crashloopbackoff-pods.outputs.parameters.cleanup-crashloopbackoff-pods }}` }}"
+            - name: cleanup-scale-failed-objects-to-zero
+              value: "{{ `{{ steps.cleanup-scale-failed-objects-to-zero.outputs.parameters.cleanup-scale-failed-objects-to-zero }}` }}"
             - name: cleanup-available-pvs
               value: "{{ `{{ steps.cleanup-available-pvs.outputs.parameters.cleanup-available-pvs}}` }}"
             - name: cleanup-empty-namespaces
@@ -82,12 +82,12 @@ spec:
             count=$((count + 1))
           done
         done
-        echo "Deleted $count Deployments with 0 replicas. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count Deployments with 0 replicas.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
-  - name: cleanup-imagepullbackoff-pods
+  - name: cleanup-statefulsets
     outputs:
         parameters:
-        - name: cleanup-imagepullbackoff-pods  
+        - name: cleanup-statefulsets  
           valueFrom:
             path: /tmp/result.txt
     script:
@@ -98,15 +98,62 @@ spec:
         #!/bin/sh
         cd /tmp
         touch result.txt
-        echo "Cleaning up ImagePullBackOff pods..."
+        echo "Cleaning up statefulsets scaled to 0..."
         count=0
         for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
-          for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Pending -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="ImagePullBackOff")].metadata.name}'); do
-            kubectl delete pod $pod -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
+          for statefulset in $(kubectl get statefulsets -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
+            kubectl delete statefulsets $statefulset -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           done
         done
-        echo "Deleted $count pods in ImagePullBackOff state. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count statefulsets with 0 replicas.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+
+  - name: cleanup-scale-failed-objects-to-zero
+    outputs:
+        parameters:
+        - name: cleanup-scale-failed-objects-to-zero 
+          valueFrom:
+            path: /tmp/result.txt
+    script:
+      image: bitnami/kubectl:latest
+      command:
+        - sh
+      source: |
+        #!/bin/sh
+        cd /tmp
+        touch result.txt
+        echo "Checking CrashLoopBackOff pods older than a week..."
+        count=0
+        current_date=$(date +%s)
+
+        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+          for pod in $(kubectl get pods -n $namespace -o json | jq -r '.items[] | select(.status.containerStatuses[0].state.waiting.reason == "CrashLoopBackOff" or .status.containerStatuses[0].state.waiting.reason == "ImagePullBackOff") | .metadata.name'); do
+            creation_timestamp=$(kubectl get pod $pod -n $namespace -o jsonpath='{.metadata.creationTimestamp}')
+            creation_date=$(date -d "$creation_timestamp" +%s)
+            age_days=$(( (current_date - creation_date) / 86400 ))
+
+            if [ "$age_days" -gt 7 ]; then
+              echo "Pod $pod in namespace $namespace is in CrashLoopBackOff for more than a week ($age_days days)."
+              owner_kind=$(kubectl get pod $pod -n $namespace -o jsonpath='{.metadata.ownerReferences[0].kind}')
+              owner_name=$(kubectl get pod $pod -n $namespace -o jsonpath='{.metadata.ownerReferences[0].name}')
+              if [ "$owner_kind" = "ReplicaSet" ]; then
+                deployment_name=$(kubectl get replicaset $owner_name -n $namespace -o jsonpath='{.metadata.ownerReferences[0].name}')
+                if [ -n "$deployment_name" ]; then
+                  echo "Scaling deployment $deployment_name to 0 replicas in namespace $namespace."
+                  kubectl scale deployment $deployment_name -n $namespace --replicas=0 {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
+                  count=$((count + 1))
+                fi
+              elif [ "$owner_kind" = "StatefulSet" ] || [ "$owner_kind" = "DaemonSet" ]; then
+                echo "Scaling $owner_kind $owner_name to 0 replicas in namespace $namespace."
+                kubectl scale $owner_kind $owner_name -n $namespace --replicas=0
+                count=$((count + 1))
+              fi
+            else
+              echo "Pod $pod in namespace $namespace has been in CrashLoopBackOff for $age_days days, skipping."
+            fi
+          done
+        done
+        echo "Scaled down $count owners of CrashLoopBackOff pods older than a week.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-services
     outputs:
@@ -133,7 +180,7 @@ spec:
             fi
           done
         done
-        echo "Deleted $count Services without Endpoints. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count Services without Endpoints.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-complete-pods
     outputs:
@@ -157,31 +204,7 @@ spec:
             count=$((count + 1))
           done
         done
-        echo "Deleted $count completed Pods. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
-
-  - name: cleanup-crashloopbackoff-pods
-    outputs:
-        parameters:
-        - name: cleanup-crashloopbackoff-pods  
-          valueFrom:
-            path: /tmp/result.txt
-    script:
-      image: bitnami/kubectl:latest
-      command:
-        - sh
-      source: |
-        #!/bin/sh
-        cd /tmp
-        touch result.txt
-        echo "Cleaning up CrashLoopBackOff pods..."
-        count=0
-        for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
-          for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Running -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="CrashLoopBackOff")].metadata.name}'); do
-            kubectl delete pod $pod -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
-            count=$((count + 1))
-          done
-        done
-        echo "Deleted $count CrashLoopBackOff pods. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count completed Pods.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-available-pvs
     outputs:
@@ -203,7 +226,7 @@ spec:
           kubectl delete pv $pv {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
           count=$((count + 1))
         done
-        echo "Deleted $count available Persistent Volumes. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count available Persistent Volumes.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-empty-namespaces
     outputs:
@@ -230,7 +253,7 @@ spec:
             count=$((count + 1))
           fi
         done
-        echo "Deleted $count empty namespaces. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count empty namespaces.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-unbound-pvcs 
     outputs:
@@ -252,7 +275,7 @@ spec:
           kubectl delete pvc $pvc {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
           count=$((count + 1))
         done
-        echo "Deleted $count unbound PVCs. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count unbound PVCs.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
   - name: cleanup-empty-ingresses 
@@ -308,17 +331,17 @@ spec:
                 done
             fi
         done
-        echo "Deleted $count empty ingress resources. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count empty ingress resources.{{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
   - name: print-report
     inputs:
       parameters:
       - name: cleanup-deployments
-      - name: cleanup-imagepullbackoff-pods
+      - name: cleanup-statefulsets
       - name: cleanup-services
       - name: cleanup-complete-pods
-      - name: cleanup-crashloopbackoff-pods
+      - name: cleanup-scale-failed-objects-to-zero
       - name: cleanup-available-pvs
       - name: cleanup-empty-namespaces
       - name: cleanup-unbound-pvcs
@@ -328,10 +351,10 @@ spec:
       command: [sh, -c]
       source: |
         echo "Cleanup Deployments: {{ `{{ inputs.parameters.cleanup-deployments }}` }}"
-        echo "Cleanup ImagePullBackOff Pods: {{ `{{ inputs.parameters.cleanup-imagepullbackoff-pods }}` }}"
+        echo "Cleanup statefulsets: {{ `{{ inputs.parameters.cleanup-statefulsets }}` }}"
         echo "Cleanup Services: {{ `{{ inputs.parameters.cleanup-services }}` }}"
         echo "Cleanup Complete Pods: {{ `{{ inputs.parameters.cleanup-complete-pods }}` }}"
-        echo "Cleanup CrashLoopBackOff Pods: {{ `{{ inputs.parameters.cleanup-crashloopbackoff-pods }}` }}"
+        echo "Cleanup Failed objects: {{ `{{ inputs.parameters.cleanup-scale-failed-objects-to-zero }}` }}"
         echo "Cleanup Available PVs: {{ `{{ inputs.parameters.cleanup-available-pvs }}` }}"
         echo "Cleanup Empty Namespaces: {{ `{{ inputs.parameters.cleanup-empty-namespaces }}` }}"
         echo "Cleanup Unbound PVCs: {{ `{{ inputs.parameters.cleanup-unbound-pvcs }}` }}"
