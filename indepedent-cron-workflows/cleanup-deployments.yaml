@@ -4,7 +4,7 @@ metadata:
   name: cleanup-deployments
   namespace: default
 spec:
-  schedule: 0 0 * * * # Runs daily at midnight
+  schedule: 0 0 * * 0 # Runs midnight every Sunday
   workflowSpec:
     entrypoint: cleanup-deployments
     templates:
@@ -24,8 +24,8 @@ spec:
             echo "Cleaning up Deployments scaled to 0..."
             count=0
             for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
-              for deployment in $(kubectl get deployments -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
-                kubectl delete deployment $deployment -n $namespace --dry-run=client
+              for item in $(kubectl get deployments -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
+                kubectl delete deployment $item -n $namespace --dry-run=client
                 count=$((count + 1))
               done
             done

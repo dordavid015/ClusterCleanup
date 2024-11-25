@@ -4,7 +4,7 @@ metadata:
   name: cleanup-complete-pods
   namespace: default
 spec:
-  schedule: 0 0 * * * # Runs daily at midnight
+  schedule: 0 0 * * 0 # Runs midnight every Sunday
   workflowSpec:
     entrypoint: cleanup-complete-pods
     templates:

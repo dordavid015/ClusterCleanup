@@ -4,7 +4,7 @@ metadata:
   name: cleanup-available-pvs
   namespace: default
 spec:
-  schedule: 0 0 * * * # Runs daily at midnight
+  schedule: 0 0 * * 0 # Runs daily at midnight
   workflowSpec:
     entrypoint: cleanup-available-pvs
     templates:
