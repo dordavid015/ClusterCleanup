@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-unbound-pvcs
+  namespace: default
+spec:
+  schedule: 0 0 * * * # Runs daily at midnight
+  workflowSpec:
+    entrypoint: cleanup-unbound-pvcs
+    templates:
+      - name: cleanup-unbound-pvcs
+        outputs:
+          parameters:
+            - name: cleanup-unbound-pvcs
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command:
+            - sh
+          source: |
+            #!/bin/sh
+            cd /tmp
+            touch result.txt
+            echo "Cleaning up unbound PVCs..."
+            count=0
+            for pvc in $(kubectl get pvc --no-headers | awk '$2 == "Pending" {print $1}'); do
+              kubectl delete pvc $pvc
+              count=$((count + 1))
+            done
+            echo "Deleted $count unbound PVCs." > /tmp/result.txt

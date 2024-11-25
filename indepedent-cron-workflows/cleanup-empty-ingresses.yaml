@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cleanup-empty-ingresses
+  namespace: default
+spec:
+  schedule: 0 0 * * * # Runs daily at midnight
+  workflowSpec:
+    entrypoint: cleanup-empty-ingresses
+    templates:
+      - name: cleanup-empty-ingresses
+        outputs:
+          parameters:
+            - name: cleanup-empty-ingresses
+              valueFrom:
+                path: /tmp/result.txt
+        script:
+          image: bitnami/kubectl:latest
+          command:
+            - sh
+          source: |
+            echo "Starting cleanup of Ingresses referencing non-existent Services in each namespace..."
+            count=0
+            # Get all namespaces
+            namespaces=$(kubectl get namespaces --no-headers -o custom-columns=":metadata.name")
+            if [ -z "$namespaces" ]; then
+                echo "No namespaces found."
+                exit 1
+            fi
+
+            for namespace in $namespaces; do
+                echo "Checking Ingresses in Namespace: $namespace"
+
+                # Get all Ingress names in the current namespace
+                ingresses=$(kubectl get ingress -n "$namespace" --no-headers -o custom-columns=":metadata.name")
+                if [ -z "$ingresses" ]; then
+                    echo "No Ingresses found in Namespace: $namespace."
+                else
+                    for ingress in $ingresses; do
+                        echo "  Checking Ingress: $ingress"
+
+                        # Get the Services referenced by this Ingress
+                        services=$(kubectl get ingress "$ingress" -n "$namespace" -o custom-columns=":spec.rules[*].http.paths[*].backend.service.name")
+
+                        if [ -n "$services" ]; then
+                            for service in $services; do
+                                echo "    Validating Service: $service"
+ 
+                                # Check if service exists
+                                service_check=$(kubectl get service "$service" -n "$namespace" --ignore-not-found)
+                                if [ -z "$service_check" ]; then
+                                    echo "    Service $service does not exist. Deleting Ingress: $ingress"
+                                    kubectl delete ingress "$ingress" -n "$namespace"
+                                    count=$((count + 1))
+                                    break  # Stop checking other services for this Ingress
+                                fi
+                            done
+                        else
+                            echo "Ingress $ingress in Namespace $namespace does not reference any Services."
+                        fi
+                    done
+                fi
+            done
+            echo "Deleted $count empty ingress resources." > /tmp/result.txt

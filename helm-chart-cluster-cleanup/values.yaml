@@ -1,1 +1,13 @@
-dryRun: true
+
+cleanup:
+  deployments: true
+  imagepullbackoffPods: true
+  services: true
+  completePods: true
+  crashloopbackoffPods: true
+  availablePvs: true
+  emptyNamespaces: true
+  unboundPvcs: true
+  emptyIngresses: true
+  printReport: true
+  dryRun: true
