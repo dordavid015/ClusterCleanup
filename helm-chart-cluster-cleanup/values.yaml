@@ -1,13 +1,13 @@
 
 cleanup:
-  deployments: true
-  imagepullbackoffPods: true
-  services: true
-  completePods: true
-  crashloopbackoffPods: true
-  availablePvs: true
-  emptyNamespaces: true
-  unboundPvcs: true
+  deployments: false
+  imagepullbackoffPods: false
+  services: false
+  completePods: false
+  crashloopbackoffPods: false
+  availablePvs: false
+  emptyNamespaces: false
+  unboundPvcs: false
   emptyIngresses: true
-  printReport: true
+  printReport: false
   dryRun: true

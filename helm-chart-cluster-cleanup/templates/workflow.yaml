@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  name: cluster-cleanup-tasks
+  name: cluster-cleanup-{{ randAlphaNum 7 | lower }}
   namespace: default
 spec:
   entrypoint: cleanup-tasks
@@ -78,11 +78,11 @@ spec:
         count=0
         for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
           for deployment in $(kubectl get deployments -n $namespace -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}'); do
-            kubectl delete deployment $deployment -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            kubectl delete deployment $deployment -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           done
         done
-        echo "Deleted $count Deployments with 0 replicas. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count Deployments with 0 replicas. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-imagepullbackoff-pods
     outputs:
@@ -102,11 +102,11 @@ spec:
         count=0
         for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
           for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Pending -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="ImagePullBackOff")].metadata.name}'); do
-            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            kubectl delete pod $pod -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           done
         done
-        echo "Deleted $count pods in ImagePullBackOff state. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count pods in ImagePullBackOff state. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-services
     outputs:
@@ -128,12 +128,12 @@ spec:
           for service in $(kubectl get svc -n $namespace -o jsonpath='{.items[*].metadata.name}'); do
             endpoints=$(kubectl get endpoints $service -n $namespace -o jsonpath='{.subsets}' 2>/dev/null)
             if [ -z "$endpoints" ]; then
-              kubectl delete svc $service -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+              kubectl delete svc $service -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
               count=$((count + 1))
             fi
           done
         done
-        echo "Deleted $count Services without Endpoints. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count Services without Endpoints. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-complete-pods
     outputs:
@@ -153,11 +153,11 @@ spec:
         count=0
         for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
           for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Succeeded -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            kubectl delete pod $pod -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           done
         done
-        echo "Deleted $count completed Pods. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count completed Pods. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-crashloopbackoff-pods
     outputs:
@@ -177,11 +177,11 @@ spec:
         count=0
         for namespace in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
           for pod in $(kubectl get pods -n $namespace --field-selector=status.phase=Running -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="CrashLoopBackOff")].metadata.name}'); do
-            kubectl delete pod $pod -n $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            kubectl delete pod $pod -n $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           done
         done
-        echo "Deleted $count CrashLoopBackOff pods. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count CrashLoopBackOff pods. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-available-pvs
     outputs:
@@ -200,10 +200,10 @@ spec:
         echo "Cleaning up available Persistent Volumes (PVs)..."
         count=0
         for pv in $(kubectl get pv --no-headers | awk '$5 == "Available" {print $1}'); do
-          kubectl delete pv $pv {{ if .Values.dryRun }}--dry-run=client{{ end }}
+          kubectl delete pv $pv {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
           count=$((count + 1))
         done
-        echo "Deleted $count available Persistent Volumes. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count available Persistent Volumes. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-empty-namespaces
     outputs:
@@ -226,11 +226,11 @@ spec:
           pod_count=$(kubectl get pods -n $namespace --no-headers 2>/dev/null | wc -l)
           svc_count=$(kubectl get svc -n $namespace --no-headers 2>/dev/null | wc -l)
           if [ "$deploy_count" -eq 0 ] && [ "$pod_count" -eq 0 ] && [ "$svc_count" -eq 0 ]; then
-            kubectl delete namespace $namespace {{ if .Values.dryRun }}--dry-run=client{{ end }}
+            kubectl delete namespace $namespace {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
             count=$((count + 1))
           fi
         done
-        echo "Deleted $count empty namespaces. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count empty namespaces. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
   - name: cleanup-unbound-pvcs 
     outputs:
@@ -249,10 +249,10 @@ spec:
         echo "Cleaning up unbound PVCs..."
         count=0
         for pvc in $(kubectl get pvc --no-headers | awk '$2 == "Pending" {print $1}'); do
-          kubectl delete pvc $pvc {{ if .Values.dryRun }}--dry-run=client{{ end }}
+          kubectl delete pvc $pvc {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
           count=$((count + 1))
         done
-        echo "Deleted $count unbound PVCs. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count unbound PVCs. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
   - name: cleanup-empty-ingresses 
@@ -297,7 +297,7 @@ spec:
                             service_check=$(kubectl get service "$service" -n "$namespace" --ignore-not-found)
                             if [ -z "$service_check" ]; then
                                 echo "    Service $service does not exist. Deleting Ingress: $ingress"
-                                kubectl delete ingress "$ingress" -n "$namespace" {{ if .Values.dryRun }}--dry-run=client{{ end }}
+                                kubectl delete ingress "$ingress" -n "$namespace" {{ if .Values.cleanup.dryRun }}--dry-run=client{{ end }}
                                 count=$((count + 1))
                                 break  # Stop checking other services for this Ingress
                             fi
@@ -308,7 +308,7 @@ spec:
                 done
             fi
         done
-        echo "Deleted $count empty ingress resources. {{ if .Values.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
+        echo "Deleted $count empty ingress resources. {{ if .Values.cleanup.dryRun }} Operation was performed in dry-run mode.{{ end }}" > /tmp/result.txt
 
 
   - name: print-report
